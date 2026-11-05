@@ -24,9 +24,18 @@ MatrixPortal M4 + 128x32 LED 매트릭스로 만든 버스 도착 안내기를 �
 ## 실시간으로 쓰기
 
 서울 버스 API는 http만 받기 때문에 https인 GitHub Pages에서는 바로 부를 수 없습니다. 그래서 중계 서버가 없으면 **시연 데이터**로 돌아가고, 화면 아래에 그렇게 표시됩니다.
-서비스 키는 이 저장소에 넣지 마세요. 아래 두 방법 모두 키를 코드 밖에 둡니다.
+서비스 키는 이 저장소에 넣지 마세요. 아래 방법 모두 키를 코드 밖에 둡니다.
 
-### 방법 1: PC에서 바로 실행
+### 방법 1: Vercel (PC 없이 어디서나, 추천)
+
+사이트와 중계 서버가 한 주소로 같이 올라가서, 접속하면 바로 실시간으로 나옵니다.
+
+1. https://vercel.com/new 에서 GitHub 계정으로 로그인합니다.
+2. `busboard` 저장소를 Import 합니다.
+3. Environment Variables에 이름 `SEOUL_BUS_SERVICE_KEY`, 값에 서비스 키를 넣습니다.
+4. Deploy를 누르고, 나온 주소를 엽니다.
+
+### 방법 2: PC에서 바로 실행
 
 Python만 있으면 됩니다. 같은 WiFi의 휴대폰은 `http://<PC-IP>:8000`으로 접속합니다.
 
@@ -35,7 +44,7 @@ $env:SEOUL_BUS_SERVICE_KEY="발급받은키"
 python server.py
 ```
 
-### 방법 2: Cloudflare Workers (PC 없이 어디서나)
+### 방법 3: Cloudflare Workers
 
 1. Cloudflare에서 Worker를 만들고 `worker.js` 내용을 넣습니다.
 2. Worker 설정의 Secret에 `SEOUL_BUS_SERVICE_KEY`를 추가합니다.
@@ -50,6 +59,7 @@ python server.py
 | `services.js` | 데이터 불러오기, 시연 데이터, 안내방송 |
 | `data.js` | 자동 생성된 글꼴과 도트 데이터 |
 | `audio/` | 안내방송 음성 |
-| `server.py`, `worker.js` | 실시간 중계 서버 |
+| `api/`, `vercel.json` | Vercel용 실시간 중계 |
+| `server.py`, `worker.js` | PC용, Cloudflare용 실시간 중계 |
 
 글꼴: GNU Unifont (GPLv2+, Font Embedding Exception), [u8g2](https://github.com/olikraus/u8g2) 형식
