@@ -13,6 +13,9 @@ const W = 128, H = 32;
 const params = new URLSearchParams(location.search);
 // loop()의 delay(30)에 화면 전송·WiFi 호출 시간을 더한 한 바퀴 시간(추정치). ?frame=35 처럼 조절 가능.
 const FRAME_MS = Math.max(10, Number(params.get('frame')) || 40);
+// 기본은 화면 주사율에 맞춰 움직인다. 속도는 같고 3칸씩 튀던 걸음만 잘게 나뉜다. ?smooth=0 이면 보드처럼 프레임 단위로 움직인다.
+const SMOOTH = params.get('smooth') !== '0';
+let tick = 1; // 이번에 그리는 동안 지나간 시간을 보드 프레임 수로 센 값
 
 const stationIds = ['19437', '19436', '19104', '19119', '19172', '16177', '14011'];
 const stationNms = ['영등포청과시장->당산', '영등포청과시장->영등포역', '영등포시장역4번출구->당산', '김안과병원->오목교', '서울역환승센터(6)', '용문사.화곡청소년센터', '합정역(홍대방향)'];
@@ -545,7 +548,7 @@ function drawExternalNotice(animate) {
     u8g2.setCursor(128 - Math.trunc(externalNoticeScrollX), 29);
     u8g2.print(externalNotice);
     if (animate) {
-      externalNoticeScrollX = f32(externalNoticeScrollX + 1.5);
+      externalNoticeScrollX = f32(externalNoticeScrollX + 1.5 * tick);
       if (externalNoticeScrollX > msgW + 128) externalNoticeScrollX = 0;
     }
   }
@@ -727,9 +730,9 @@ function drawCurrentFrame(animate) {
   if (isShowingStationName) {
     const stationName = currentStationName();
     u8g2.setForegroundColor(color565(255, 255, 255));
-    u8g2.setCursor(stationNameX, 24); u8g2.print(stationName);
+    u8g2.setCursor(Math.trunc(stationNameX), 24); u8g2.print(stationName);
     if (animate) {
-      stationNameX -= 3;
+      stationNameX -= 3 * tick;
       if (stationNameX < -getStrWidth(stationName)) {
         isShowingStationName = false;
         lastSingleRouteDateTime = millis();
@@ -789,7 +792,7 @@ function drawCurrentFrame(animate) {
       } else {
         const dx = 2 - Math.trunc(topScrollX);
         if (animate) {
-          topScrollX = f32(topScrollX + 0.8);
+          topScrollX = f32(topScrollX + 0.8 * tick);
           if (topScrollX > totalW + 4) topScrollX = 0;
         }
         let ptr = dx;
@@ -812,7 +815,7 @@ function drawCurrentFrame(animate) {
         if (!isStopped) {
           dx = 1 - Math.trunc(topScrollX);
           if (animate) {
-            topScrollX = f32(topScrollX + scrollSpeed);
+            topScrollX = f32(topScrollX + scrollSpeed * tick);
             if (totalW - Math.trunc(topScrollX) <= 126) { topScrollX = totalW - 126; isStopped = true; lastBusSwitchTime = millis(); }
           }
         } else { dx = 1 - Math.trunc(topScrollX); if (animate && millis() - lastBusSwitchTime > waitTime) advanceBusIndex(); }
@@ -865,8 +868,8 @@ function drawCurrentFrame(animate) {
     }
     if (bottomW <= 128) botX = 2;
     else if (bottomTotal === 1 && animate) {
-      if (botX > 128 - bottomW) botX = f32(botX - 1.0); else botX = 2;
-    } else if (animate) botX = f32(botX - 1.0);
+      if (botX > 128 - bottomW) botX = f32(botX - tick); else botX = 2;
+    } else if (animate) botX = f32(botX - tick);
     let tx = Math.trunc(botX);
     drawCustomBus(tx, 16);
     tx += 46;
@@ -887,10 +890,15 @@ function drawCurrentFrame(animate) {
 
 /* ---- 화면 출력: 16비트 색을 패널의 4비트 밝기로 낮춰 표시 ---- */
 let onShow = () => {};
-function show() { onShow(fb); }
+function show(dt = 0) { onShow(fb, dt); }
 
 /* ---- loop() 대응 ---- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// 다음 화면 주사에 맞춰 깨어난다. 탭이 가려져 주사가 멈춰도 타이머로 계속 돈다.
+const nextFrame = () => new Promise(r => {
+  const t = setTimeout(() => { cancelAnimationFrame(a); r(); }, 100);
+  const a = requestAnimationFrame(() => { clearTimeout(t); r(); });
+});
 async function boot() {
   fillScreen(0);
   u8g2.setForegroundColor(color565(255, 255, 255));
@@ -903,17 +911,23 @@ async function boot() {
   stationNameX = 128;
   lastBusSwitchTime = millis();
   lastSingleRouteDateTime = millis();
+  let prev = performance.now();
   for (;;) {
     const start = performance.now();
+    const dt = Math.min(100, start - prev);
+    prev = start;
+    if (SMOOTH) tick = dt / FRAME_MS;
     drawCurrentFrame(true);
-    show();
+    show(SMOOTH ? dt : 0);
     if (!isShowingStationName && !isUpdatingBuses && millis() - lastUpdate > 30000 && !document.hidden) requestDataRefresh();
-    if (!isShowingStationName && refreshPending) {
+    if (!isShowingStationName && refreshPending && !isUpdatingBuses) {
       refreshPending = false;
       lastUpdate = millis();
-      await updateBuses(); // 보드도 갱신하는 동안에는 화면이 멈춘다
+      if (SMOOTH) updateBuses(); // 불러오는 동안에도 스크롤은 멈추지 않는다
+      else await updateBuses(); // 보드는 갱신하는 동안 화면이 멈춘다
     }
-    await sleep(Math.max(0, FRAME_MS - (performance.now() - start)));
+    if (SMOOTH) await nextFrame();
+    else await sleep(Math.max(0, FRAME_MS - (performance.now() - start)));
   }
 }
 

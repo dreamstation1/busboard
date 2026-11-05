@@ -26,11 +26,11 @@
     padding-right: max(16px, env(safe-area-inset-right, 0px));
     padding-block: 16px 32px;
   }
-  main { max-width: 1040px; margin: 0 auto; display: grid; gap: 14px; }
+  main { max-width: 1056px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 
   /* 전광판 케이스 */
   #case { background: #050505; border: 1px solid #000; border-radius: 6px; padding: clamp(6px, 1.4vw, 14px); box-shadow: inset 0 0 0 1px #262a2f, 0 10px 30px rgba(0,0,0,.5); }
-  #led { display: block; width: 100%; height: auto; image-rendering: pixelated; background: #000; }
+  #led { display: block; max-width: 100%; height: auto; margin: 0 auto; image-rendering: pixelated; background: #000; }
   #case:fullscreen { display: flex; align-items: center; justify-content: center; border: 0; border-radius: 0; padding: 0; background: #000; box-shadow: none; }
 
   .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -147,12 +147,19 @@
 
   // Protomatter 4비트 깊이: 565 색의 상위 4비트만 밝기로 쓰인다.
   const lv = new Uint8Array(16).map((_, i) => i * 17);
-  function paint(fb) {
+  // 글자가 한 칸 옮겨갈 때 LED가 탁 꺼지고 켜지지 않고 짧게 번져서 넘어가게 한다. dt가 0이면 바로 바뀐다.
+  const FADE_MS = 20;
+  const glow = new Float32Array(B.W * B.H * 3);
+  function paint(fb, dt = 0) {
     last = fb;
+    const k = dt > 0 ? 1 - Math.exp(-dt / FADE_MS) : 1;
     const d = img.data;
-    for (let i = 0, p = 0; i < fb.length; i++, p += 4) {
+    for (let i = 0, p = 0, g = 0; i < fb.length; i++, p += 4, g += 3) {
       const c = fb[i];
-      d[p] = lv[c >> 12]; d[p + 1] = lv[(c >> 7) & 15]; d[p + 2] = lv[(c >> 1) & 15]; d[p + 3] = 255;
+      d[p] = glow[g] += (lv[c >> 12] - glow[g]) * k;
+      d[p + 1] = glow[g + 1] += (lv[(c >> 7) & 15] - glow[g + 1]) * k;
+      d[p + 2] = glow[g + 2] += (lv[(c >> 1) & 15] - glow[g + 2]) * k;
+      d[p + 3] = 255;
     }
     sctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -160,10 +167,13 @@
     ctx.drawImage(mask, 0, 0);
   }
   function resize() {
-    const box = document.fullscreenElement ? window.innerWidth : canvas.parentElement.clientWidth - 2;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const holder = canvas.parentElement, cs = getComputedStyle(holder);
+    const box = document.fullscreenElement ? window.innerWidth : holder.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const dpr = window.devicePixelRatio || 1;
     const pitch = Math.max(3, Math.floor(box * dpr / B.W));
     canvas.width = pitch * B.W; canvas.height = pitch * B.H;
+    // 화면 픽셀과 1:1로 맞춘다. 비율이 어긋나면 일부 LED 줄이 뭉개져서 글자가 지나갈 때 번쩍인다.
+    canvas.style.width = `${canvas.width / dpr}px`;
     mask.width = canvas.width; mask.height = canvas.height;
     const tile = document.createElement('canvas');
     tile.width = tile.height = pitch;
