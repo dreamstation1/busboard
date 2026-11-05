@@ -12,9 +12,10 @@ const W = 128, H = 32;
 /* ---- 설정 ---- */
 const params = new URLSearchParams(location.search);
 // loop()의 delay(30)에 화면 전송·WiFi 호출 시간을 더한 한 바퀴 시간(추정치). ?frame=35 처럼 조절 가능.
-const FRAME_MS = Math.max(10, Number(params.get('frame')) || 40);
-// 기본은 화면 주사율에 맞춰 움직인다. 속도는 같고 3칸씩 튀던 걸음만 잘게 나뉜다. ?smooth=0 이면 보드처럼 프레임 단위로 움직인다.
+// 기본은 화면 주사율에 맞춰 움직인다. 3칸씩 튀던 걸음이 잘게 나뉜다. ?smooth=0 이면 보드처럼 프레임 단위로 움직인다.
 const SMOOTH = params.get('smooth') !== '0';
+// smooth=0은 타이머 지연이 더해져 실제로 약 46ms가 되므로, 부드러운 모드도 46ms 기준으로 같은 속도를 낸다.
+const FRAME_MS = Math.max(10, Number(params.get('frame')) || (SMOOTH ? 46 : 40));
 let tick = 1; // 이번에 그리는 동안 지나간 시간을 보드 프레임 수로 센 값
 
 const stationIds = ['19437', '19436', '19104', '19119', '19172', '16177', '14011'];
@@ -890,7 +891,7 @@ function drawCurrentFrame(animate) {
 
 /* ---- 화면 출력: 16비트 색을 패널의 4비트 밝기로 낮춰 표시 ---- */
 let onShow = () => {};
-function show(dt = 0) { onShow(fb, dt); }
+function show() { onShow(fb); }
 
 /* ---- loop() 대응 ---- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -914,11 +915,10 @@ async function boot() {
   let prev = performance.now();
   for (;;) {
     const start = performance.now();
-    const dt = Math.min(100, start - prev);
+    if (SMOOTH) tick = Math.min(100, start - prev) / FRAME_MS;
     prev = start;
-    if (SMOOTH) tick = dt / FRAME_MS;
     drawCurrentFrame(true);
-    show(SMOOTH ? dt : 0);
+    show();
     if (!isShowingStationName && !isUpdatingBuses && millis() - lastUpdate > 30000 && !document.hidden) requestDataRefresh();
     if (!isShowingStationName && refreshPending && !isUpdatingBuses) {
       refreshPending = false;
